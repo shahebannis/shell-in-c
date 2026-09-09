@@ -1,0 +1,6 @@
+#! /home/shahe/Projects/shell-in-c/main
+# Print the date
+date
+ls -l   # File listing
+# All done!
+echo All done
