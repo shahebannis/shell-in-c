@@ -5,6 +5,8 @@
 #include <sys/wait.h>
 
 int handle_redirect(char *args[]);
+int piping(char *args[]);
+int amount_pipes(char *args[], char target[]);
 
 int main(int argc, char *argv[]) {
     int interactive = 1;
@@ -39,8 +41,6 @@ int main(int argc, char *argv[]) {
         //remove comments (also allows for shebangs to work because of how execvp works and then comment removal remove the shebang right before execution)
         char *hash = strchr(buf, '#');
         if (hash) *hash = '\0';
-    
-
 
         // split buf into args
         char *args[20]; // watch out for overflowing buffer if im to continue this project
@@ -62,11 +62,14 @@ int main(int argc, char *argv[]) {
         }
         else {
             // child
-            //
+
             if (handle_redirect(args) == -1) {
                 fprintf(stderr, "Could not redirect\n");
                 exit(1);
             }
+            // if (handle_outdirect(args) == -1) {
+            //     fprintf(stderr, "Could not outdirect\n");
+            // }
 
             execvp(args[0], args);
 
@@ -93,6 +96,38 @@ int handle_redirect(char *args[]) {
             args[i] = NULL;
             return 1;
         }
+        else if (strcmp(args[i], "<") == 0) { // stdin version done
+            //assuming next arg is always the file to write to
+            if ( freopen(args[i+1], "r", stdin) == NULL ) return -1; //reopen to replace stdout file descriptor with this new file. Also replaces abstraction layer on top out stdout
+                                                                      //or use open but a lot more work, but probably better
+
+            // Terminate args at the "<" symbol
+            args[i] = NULL;
+            return 1;
+        }
+
     }
     return 0;
+}
+
+// handle piping
+int piping(char *args[]) {
+    for (int i = 0; args[i] != NULL; i++) {
+        if (strcmp(args[i], "|") == 0) {
+            //if a pipe, do something
+            //feel like there is a better way to do this, once for all variations
+            //also gotta think of how to do it for multiple pipes
+        }
+    }
+}
+
+// count amount of 'target' in an array (for pipe)
+int amount_pipes(char *args[], char target[]) {
+    int count = 0;
+
+    for (int i = 0; args[i] != NULL; i++) {
+        if (strcmp(args[i], "|") != NULL) count++;
+    }
+
+    return count;
 }
