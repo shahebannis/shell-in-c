@@ -1,15 +1,20 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>
 #include <unistd.h>
 #include <sys/wait.h>
 
 int handle_redirect(char *args[]);
-int piping(char *args[]);
-int amount_pipes(char *args[], char target[]);
+int piping(char *args[], char ***left, char ***right);
+int amount_pipes(char *args[]);
 
 int main(int argc, char *argv[]) {
     int interactive = 1;
+    int pipe_count = 0;
+    int pipefd[2];
+    char **left;
+    char **right;
 
     // for scripting
     if (argc > 1) {
@@ -53,27 +58,76 @@ int main(int argc, char *argv[]) {
 
         if (args[0] == NULL) continue;
         if (strcmp(args[0], "exit") == 0) exit(0); //when running a command that does not exist right before, you need to exit twice. Probably due to the fork still running or something, idk.
-        //fork and execute
-        pid_t pid = fork();
+        
 
-        if (pid > 0) {
-            // parent
-            wait(NULL);
+        // lets assume piping only has 2 commands total for now
+        pipe_count = amount_pipes(args); //if piped this will always equal 1 ---for now
+
+        int status; // status of pid
+        //check if piped
+        if (pipe_count == 0) {
+            //fork and execute
+            pid_t pid = fork();
+
+            if (pid > 0) {
+                // parent
+                wait(NULL);
+            }
+            else {
+                // child
+
+                if (handle_redirect(args) == -1) {
+                    fprintf(stderr, "Could not redirect\n");
+                    exit(1);
+                }
+                // if (handle_outdirect(args) == -1) {
+                //     fprintf(stderr, "Could not outdirect\n");
+                // }
+
+                execvp(args[0], args);
+
+                fprintf(stderr, "Could not exec %s\n", buf);
+            }
         }
         else {
-            // child
+            piping(args, &left, &right);
+            pipe(pipefd); // create pipe
 
-            if (handle_redirect(args) == -1) {
-                fprintf(stderr, "Could not redirect\n");
-                exit(1);
+            pid_t left_pid = fork();
+
+            if (left_pid > 0) {
+                pid_t right_pid = fork();
+                if (right_pid > 0) {
+                    close(pipefd[0]);
+                    close(pipefd[1]);
+
+                    waitpid(right_pid, &status, 0);
+
+                }
+                else {
+                    dup2(pipefd[0], STDIN_FILENO);
+                    close(pipefd[0]);
+                    close(pipefd[1]);
+
+                    execvp(right[0], right);
+                    fprintf(stderr, "Could not exec second command: %s\n", buf);
+                    _exit(1);
+                }
+                waitpid(left_pid, &status, 0);
             }
-            // if (handle_outdirect(args) == -1) {
-            //     fprintf(stderr, "Could not outdirect\n");
-            // }
+            else if (left_pid == -1) {
+                close(pipefd[0]);
+                close(pipefd[1]);
+            }
+            else {
+                dup2(pipefd[1], STDOUT_FILENO);
+                close(pipefd[0]);
+                close(pipefd[1]);
 
-            execvp(args[0], args);
-
-            fprintf(stderr, "Could not exec %s\n", buf);
+                execvp(left[0], left);
+                fprintf(stderr, "Could not exec fir command: %s\n", buf);
+                _exit(1);
+            }
         }
     }
     return 0;
@@ -111,22 +165,30 @@ int handle_redirect(char *args[]) {
 }
 
 // handle piping
-int piping(char *args[]) {
+int piping(char *args[], char ***left, char ***right) {
     for (int i = 0; args[i] != NULL; i++) {
         if (strcmp(args[i], "|") == 0) {
             //if a pipe, do something
             //feel like there is a better way to do this, once for all variations
             //also gotta think of how to do it for multiple pipes
+            //if there's a pipe, return it's index and turn it Null -> eventually
+            //for now just define new vars left and right since its only 2
+            args[i] = NULL;
+            *left = args;
+            *right = &args[i + 1];
+            
+            return 1; // for success
         }
     }
+    return 0;
 }
 
 // count amount of 'target' in an array (for pipe)
-int amount_pipes(char *args[], char target[]) {
+int amount_pipes(char *args[]) {
     int count = 0;
 
     for (int i = 0; args[i] != NULL; i++) {
-        if (strcmp(args[i], "|") != NULL) count++;
+        if (strcmp(args[i], "|") == 0) count++;
     }
 
     return count;
